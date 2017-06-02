@@ -1,22 +1,37 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 	<head>
 		<meta charset="utf-8">
-		<title>BADNOISE Blog Page {{title}}</title>
 		<meta name="viewport" content="initial-scale=1">
-		<link rel="stylesheet" type="text/css" href="css/hella.css">
-		<link rel="stylesheet" type="text/css" href="css/hella-style.css">
+		<link rel="stylesheet" href="{{reversepath}}../styles/hella.css">
+		<link rel="stylesheet" href="{{reversepath}}../styles/style.css">
+		<link rel="stylesheet" href="{{reversepath}}../styles/hella-style.css">
+		<title>badnoise pg {{title}}</title>
 	</head>
 	<body>
-		<div class="grid">
-			This is the list screen!
-			<br/>
-			{{title}}
-			<hr/>
-			{{content}}
-			This is the bottom of the page!
-		</div>
+		<a href="index.html">
+      <div id="header">
+	       <div id="logo"></div>
+			</div>
+		</a>
+    <div class="grid">
+      <div class="row" id="navbar">
+        <div class="column six non-responsive no-margin">
+					<a href="#">blog</a>
+				</div>
+				<div class="column six non-responsive">
+					<a href="#">contact</a>
+				</div>
+      </div>
+			<div class="content">
+				<div class="row ">
+					<div class="column">
+						<h3>{{title}}</h3>
+						{{content}}
+					</div>
+				</div>
+      </div>
+    </div>
+		<div id="bottombar"></div>
 	</body>
 </html>
-
-
