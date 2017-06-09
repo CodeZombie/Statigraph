@@ -3,10 +3,10 @@
 	<head>
 		<meta charset="utf-8">
 		<meta name="viewport" content="initial-scale=1">
-		<link rel="stylesheet" href="../../../../styles/hella.css">
-		<link rel="stylesheet" href="../../../../styles/style.css">
-		<link rel="stylesheet" href="../../../../styles/hella-style.css">
-		<script type="text/javascript" src="../../../../js/activate_comments.js"></script>
+		<link rel="stylesheet" href="{{rootdirectory}}styles/hella.css">
+		<link rel="stylesheet" href="{{rootdirectory}}styles/style.css">
+		<link rel="stylesheet" href="{{rootdirectory}}styles/hella-style.css">
+		<script type="text/javascript" src="{{rootdirectory}}js/activate_comments.js"></script>
 		<title>badnoise - {{title}}</title>
 	</head>
 	<body>

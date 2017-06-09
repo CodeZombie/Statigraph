@@ -3,9 +3,9 @@
 	<head>
 		<meta charset="utf-8">
 		<meta name="viewport" content="initial-scale=1">
-		<link rel="stylesheet" href="{{reversepath}}../styles/hella.css">
-		<link rel="stylesheet" href="{{reversepath}}../styles/style.css">
-		<link rel="stylesheet" href="{{reversepath}}../styles/hella-style.css">
+		<link rel="stylesheet" href="{{rootdirectory}}styles/hella.css">
+		<link rel="stylesheet" href="{{rootdirectory}}styles/style.css">
+		<link rel="stylesheet" href="{{rootdirectory}}styles/hella-style.css">
 		<title>badnoise pg {{title}}</title>
 	</head>
 	<body>
