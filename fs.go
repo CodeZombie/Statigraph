@@ -9,13 +9,13 @@ import (
 	"path/filepath"
 )
 
-// CopyFile copies the contents of the file named src to the file named
+// copy_file copies the contents of the file named src to the file named
 // by dst. The file will be created if it does not already exist. If the
 // destination file exists, all it's contents will be replaced by the contents
 // of the source file. The file mode will be copied from the source and
 // the copied data is synced/flushed to stable storage.
 // https://gist.github.com/m4ng0squ4sh/92462b38df26839a3ca324697c8cba04
-func CopyFile(src, dst string) (err error) {
+func copy_file(src, dst string) (err error) {
 	in, err := os.Open(src)
 	if err != nil {
 		return
@@ -54,11 +54,11 @@ func CopyFile(src, dst string) (err error) {
 	return
 }
 
-// CopyDir recursively copies a directory tree, attempting to preserve permissions.
+// copy_directory recursively copies a directory tree, attempting to preserve permissions.
 // Source directory must exist, destination directory must *not* exist.
 // Symlinks are ignored and skipped.
 // https://gist.github.com/m4ng0squ4sh/92462b38df26839a3ca324697c8cba04
-func CopyDir(src string, dst string) (err error) {
+func copy_directory(src string, dst string) (err error) {
 	src = filepath.Clean(src)
 	dst = filepath.Clean(dst)
 
@@ -93,7 +93,7 @@ func CopyDir(src string, dst string) (err error) {
 		dstPath := filepath.Join(dst, entry.Name())
 
 		if entry.IsDir() {
-			err = CopyDir(srcPath, dstPath)
+			err = copy_directory(srcPath, dstPath)
 			if err != nil {
 				return
 			}
@@ -103,7 +103,7 @@ func CopyDir(src string, dst string) (err error) {
 				continue
 			}
 
-			err = CopyFile(srcPath, dstPath)
+			err = copy_file(srcPath, dstPath)
 			if err != nil {
 				return
 			}
@@ -113,7 +113,7 @@ func CopyDir(src string, dst string) (err error) {
 	return
 }
 
-func readFile(path string) (string, error) {
+func read_file(path string) (string, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return "", err
@@ -128,13 +128,13 @@ func readFile(path string) (string, error) {
 	return lines, scanner.Err()
 }
 
-func createFile(path string, filename string, data string) error {
+func create_file(path string, filename string, data string) error {
 	err := os.MkdirAll(path, 0666)
 	if err != nil {
 		return err
 	}
 
-	f, err := os.Create(path + filename)
+	f, err := os.Create(filepath.Join(path,filename))
 	defer f.Close()
 	if err != nil {
 		return err

@@ -1,8 +1,8 @@
 package main
-
 import (
 	"fmt"
 	"io/ioutil"
+	"path/filepath"
 	"math"
 	"os"
 	"regexp"
@@ -10,23 +10,15 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"errors"
+	"github.com/PuerkitoBio/goquery"
+	"github.com/alecthomas/chroma/formatters/html"
+	"github.com/alecthomas/chroma/formatters"
+	"github.com/alecthomas/chroma/quick"
 )
 
-//////////////////////////////
-//todo:
-//	add more comments.
-//	stress test with 100 edge-case entries
-//	ensure that webserver mode works properly.
-
-const DEBUG_MODE = true //true if testing the site locally through your browser, false if running on webserver.
-const MAX_URL_LENGTH = 32
-const POSTS_PER_LIST = 5
-const BLOG_SUBDIRECTORY = "blog"
-
-var WEBSERV_ROOT = "file:///C:/Users/cazum/Documents/GitHub/Statigraph/_output/" //absolute directory to the output directory
 
 type Post struct {
-	filename string
 	title    string
 	unixtime int64
 	date     string
@@ -36,87 +28,101 @@ type Post struct {
 	path     string
 }
 
-func getWebRoot() string {
-	if DEBUG_MODE == true {
-		//dir, err := filepath.Abs(filepath.Dir(os.Args[0]))
-		//checkError(err)
-		return WEBSERV_ROOT
-	}
-	return "/"
-}
-
-func checkError(error_ error) {
+func fail_on_error(error_ error) {
+	/* Prints an error and kills the application if the error is not nil */
 	if error_ != nil {
 		fmt.Printf("Error: %s", error_.Error())
 		os.Exit(-1)
 	}
 }
 
-func intInSlice(haystack_ []int, needle_ int) bool {
-	for _, h := range haystack_ {
-		if h == needle_ {
-			return true
-		}
-	}
-	return false
-}
-
-func getPosts(folder_ string) ([]Post, error) {
-	var posts []Post //data structure for each post
+func get_posts(input_post_directory string, blog_subdirectory string, max_url_length int) ([]Post, error) {
+	/* Reads every file in the input_post_directory into a slice of Post structs and returns. */
+	var posts []Post
 
 	rgx := regexp.MustCompile("[^a-zA-Z-0-9]")
 
-	files, err := ioutil.ReadDir(folder_) //get list of every file in _posts directory
-	checkError(err)
+	files, err := ioutil.ReadDir(input_post_directory) //get list of every file in INPUT_POST_DIRECTORY directory
+	fail_on_error(err)
 
-	for _, f := range files { //for each file in the _posts/ directory...
-		if f.Name()[len(f.Name())-5:] == ".post" { //if the file extension is a .post...
-			content, err := readFile("_posts/" + f.Name()) //load the content of the file
-			checkError(err)
+	for _, f := range files { //for each file in the INPUT_POST_DIRECTORY/ directory...
+		if f.Name()[len(f.Name())-5:] == ".post" { //if the file extension is .post...
 
-			t, err := time.Parse("2006-01-02", f.Name()[:10]) //generate a time object from the first 10 chars of the post filename
-			checkError(err)
+			content, err := read_file(filepath.Join(input_post_directory, f.Name())) //load the content of the file
+			fail_on_error(err)
 
-			date := t.Format("2006/01/02") //make the time pretty
+			document, err := goquery.NewDocumentFromReader(strings.NewReader(content))
+			fail_on_error(err)
 
-			unixtime := t.Unix() //make the time functional
-			year := t.Year()
-			month := int(t.Month())
-			//folder := "posts/" + date + "/" //relative folder containing this post
+			//find every sg_codeblock
+			//find it's 'language' attribute's value
+			//replace the content of this tag with the chroma.Quick output
+			document.Find("sg_codeblock").Each(func(i int, s *goquery.Selection) {
+				
+				//Find the "language" attr in the tag.
+				language, attributeExists := s.Attr("language")
+				if !attributeExists{
+					fail_on_error(errors.New("<sg_codeblock> #%d does not have a \"language\" attribute."))
+					return
+				}
 
-			title := f.Name()[11 : len(f.Name())-5] //cut off the date data and ".post", leaving just the title
+				//Get the contents of the <sg_codeblock> element
+				innerText := s.Text()
+				
+				//Use Chroma to syntax-highlight the contents of the element
+				var formattedStringBuilder strings.Builder
+				formatters.Register("badnoise_style", html.New(html.Standalone(false), html.WithClasses(true)))
+				err = quick.Highlight(&formattedStringBuilder, innerText, language, "badnoise_style", "abap")
+				fail_on_error(err)
+				
+				//Set the html of the element to the chroma syntax highlighted version.
+				formatted_text := formattedStringBuilder.String()
+				s.SetHtml(formatted_text)
+			})
+			
+			formatted_html, err := document.Html()
+			fail_on_error(err)
 
-			filename := strings.Replace(title, " ", "-", -1) //replace spaces with dashes because %20 sucks
+			var input_date_format = "2006-01-02"
+			post_time, err := time.Parse(input_date_format, f.Name()[ : len(input_date_format)]) //generate a time object from the first 10 chars of the post filename
+			fail_on_error(err)
 
-			filename = string(rgx.ReplaceAll([]byte(filename), []byte(""))) //make it URL safe
+			title := f.Name()[len(input_date_format) : len(f.Name())-5] //cut off the date data and ".post", leaving just the title
 
-			if len(filename) > MAX_URL_LENGTH { //truncate filename, if necessary
-				filename = filename[:MAX_URL_LENGTH]
+			foldername := strings.Replace(title, " ", "-", -1) //replace spaces with dashes because `%20`` is ugly
+
+			foldername = string(rgx.ReplaceAll([]byte(foldername), []byte(""))) //make it URL safe
+
+			if len(foldername) > max_url_length { //truncate foldername, if necessary
+				foldername = foldername[:max_url_length]
 			}
-			filename = filename + ".html"
-
-			path := BLOG_SUBDIRECTORY + "/" + date
-
-			posts = append(posts, Post{filename: filename, path: path, year: year, month: month, title: title, unixtime: unixtime, date: date, content: content})
+			
+			posts = append(posts, Post{
+				path: filepath.Join(blog_subdirectory, foldername), 
+				year: post_time.Year(), 
+				month: int(post_time.Month()), 
+				title: title, 
+				unixtime: post_time.Unix(), 
+				date: post_time.Format("Jan 02, 2006"), 
+				content: formatted_html})
 		}
 	}
 
 	return posts, nil
 }
 
-func savePosts(posts_ []Post) error {
-	postTemplate, err := readFile("_templates/post.template")
-	if err != nil {
-		return err
-	}
+//TODO: replace this with the built-in html/template module
+func save_posts(posts []Post, output_directory string, input_template_directory string) error {
+	
+	postTemplate, err := read_file(filepath.Join(input_template_directory, "post.template"))
+	fail_on_error(err)
 
-	for _, p := range posts_ {
+	for _, p := range posts {
 		postData := postTemplate
 		postData = strings.Replace(postData, "{{title}}", p.title, -1)
 		postData = strings.Replace(postData, "{{date}}", p.date, -1)
 		postData = strings.Replace(postData, "{{content}}", p.content, -1)
-		postData = strings.Replace(postData, "{{rootdirectory}}", getWebRoot(), -1)
-		err = createFile("_output/"+p.path+"/", p.filename, postData)
+		err = create_file(filepath.Join(output_directory, p.path), "index.html", postData)
 		if err != nil {
 			return err
 		}
@@ -124,21 +130,34 @@ func savePosts(posts_ []Post) error {
 	return nil
 }
 
-func saveList(postList_ [][]Post, directoryPath string) error {
-	listTemplate, err := readFile("_templates/list.template")
-	checkError(err)
+func createLists(posts_ []Post, input_template_directory string, output_directory string, blog_subdirectory string, posts_per_list int) error {
+	var rootList [][]Post
 
-	linkTemplate, err := readFile("_templates/link.template")
-	checkError(err)
+	//Sort posts by their post-date
+	sort.Slice(posts_, func(i, j int) bool { return posts_[i].unixtime < posts_[j].unixtime })
 
-	for i, page := range postList_ { //for each list
+	//genearte rootList
+	for i, p := range posts_ { //for every post in the blog
+		if i % posts_per_list == 0 { //if this is the first post of what should be a new listpage...
+			rootList = append(rootList, []Post{}) //create a new page
+		}
+		pid := int(math.Floor(float64(i / posts_per_list))) //which page the post will be on...
+		rootList[pid] = append(rootList[pid], p)            //insert the post data into this listpage
+	}
+
+	listTemplate, err := read_file(filepath.Join(input_template_directory, "list.template"))
+	fail_on_error(err)
+
+	linkTemplate, err := read_file(filepath.Join(input_template_directory, "link.template"))
+	fail_on_error(err)
+
+	for i, page := range rootList { //for each list
 		listpageData := listTemplate                                                           //grab the list template
-		listpageData = strings.Replace(listpageData, "{{title}}", "Page "+strconv.Itoa(i), -1) //insert the title of the list into this template
-		listpageData = strings.Replace(listpageData, "{{rootdirectory}}", getWebRoot(), -1)
+		listpageData = strings.Replace(listpageData, "{{title}}", "Page " + strconv.Itoa(i), -1) //insert the title of the list into this template
 		linkData := ""
 		for _, post := range page { //for each post linked in this list...
 			link := linkTemplate
-			link = strings.Replace(link, "{{link}}", getWebRoot()+post.path+"/"+post.filename, -1)
+			link = strings.Replace(link, "{{link}}", "../" + post.path, -1)
 			link = strings.Replace(link, "{{title}}", post.title, -1)
 			link = strings.Replace(link, "{{date}}", post.date, -1)
 			linkData = linkData + link
@@ -149,119 +168,41 @@ func saveList(postList_ [][]Post, directoryPath string) error {
 		if fname == "0" {
 			fname = "index"
 		}
-
-		err = createFile("_output/"+BLOG_SUBDIRECTORY+"/"+directoryPath, fname+".html", listpageData) //and write.
-		checkError(err)
-	}
-	return nil
-}
-
-func createLists(posts_ []Post) error {
-	var yearData []int
-	//root lists are structured as [page][posts]
-	var monthData = make(map[int][]int)
-	//root lists are structured as [page][posts]
-
-	var rootList [][]Post
-	//yearlist is organized like [year][page][posts]
-	var yearList = make(map[int][][]Post)
-	var monthList = make(map[int]map[int][][]Post)
-
-	//first, sort everything
-	sort.Slice(posts_, func(i, j int) bool { return posts_[i].unixtime < posts_[j].unixtime })
-
-	//figure out which years/months there are among all the posts
-	for _, p := range posts_ {
-		if monthData[p.year] == nil {
-			monthData[p.year] = []int{}
-			yearData = append(yearData, p.year)
-		}
-		if intInSlice(monthData[p.year], p.month) == false {
-			monthData[p.year] = append(monthData[p.year], p.month)
-		}
-	}
-
-	//genearte rootList
-	for i, p := range posts_ { //for every post in the blog
-		if i%POSTS_PER_LIST == 0 { //if this is the first post of what should be a new listpage...
-			rootList = append(rootList, []Post{}) //create a new page
-		}
-		pid := int(math.Floor(float64(i / POSTS_PER_LIST))) //which page the post will be on...
-		rootList[pid] = append(rootList[pid], p)            //insert the post data into this listpage
-	}
-
-	//generate yearlist
-	for _, y := range yearData { //for every year
-		i := 0
-		for _, p := range posts_ { //for every post
-			if p.year != y { //if this post is not from the year in the outer loop
-				continue //skip
-			}
-
-			if i%POSTS_PER_LIST == 0 { //if this is the first post of what should be a new list page...
-				yearList[y] = append(yearList[y], []Post{}) //create a new page
-			}
-			yearList[y][len(yearList[y])-1] = append(yearList[y][len(yearList[y])-1], p) //insert the post data into this listpage
-			i += 1
-		}
-	}
-
-	//generate monthlist
-
-	for _, y := range yearData { //for every year
-		monthList[y] = make(map[int][][]Post) //init that year's map
-		for _, m := range monthData[y] {      //for every month in that year
-			i := 0                     //init our iterator to 0
-			for _, p := range posts_ { //for every post
-				if p.year != y || p.month != m { //if this post is not within our month and year
-					continue //skip it
-				}
-				if i%POSTS_PER_LIST == 0 { //if this is the first post of what should be a new list page...
-					monthList[y][m] = append(monthList[y][m], []Post{}) //create a new page
-				}
-				monthList[y][m][len(monthList[y][m])-1] = append(monthList[y][m][len(monthList[y][m])-1], p) //insert the post data into this listpage
-				i += 1
-			}
-		}
-	}
-
-	//save rootlist
-	saveList(rootList, "")
-
-	//save yearList
-	for _, y := range yearData {
-		saveList(yearList[y], strconv.Itoa(y)+"/")
-		for _, m := range monthData[y] {
-			//add padding...
-			smonth := strconv.Itoa(m)
-			if m < 10 {
-				smonth = "0" + smonth
-			}
-			saveList(monthList[y][m], strconv.Itoa(y)+"/"+smonth+"/")
-		}
+		
+		err = create_file(filepath.Join(output_directory, blog_subdirectory), fname + ".html", listpageData)
+		fail_on_error(err)
 	}
 	return nil
 }
 
 func main() {
+	args := os.Args[1:]
+	input_directory := args[0]
+	output_directory := args[1]
+
+	input_post_directory := filepath.Join(input_directory, "_posts")
+	input_static_directory := filepath.Join(input_directory, "_static")
+	input_template_directory := filepath.Join(input_directory, "_templates")
+
+	blog_subdirectory := "blog"
 
 	//load every post file into a data structure
-	posts, err := getPosts("_posts/")
-	checkError(err)
+	posts, err := get_posts(input_post_directory, blog_subdirectory, 32)
+	fail_on_error(err)
 
-	//delete everything from the _output directory
-	err = os.RemoveAll("_output/")
-	checkError(err)
+	//delete everything from the OUTPUT_DIRECTORY directory
+	err = os.RemoveAll(output_directory)
+	fail_on_error(err)
 
 	//copy all static files to the output folder
-	err = CopyDir("_static/", "_output/")
-	checkError(err)
+	err = copy_directory(input_static_directory, output_directory)
+	fail_on_error(err)
 
 	//create a file for every post
-	err = savePosts(posts)
-	checkError(err)
+	err = save_posts(posts, output_directory, input_template_directory)
+	fail_on_error(err)
 
 	//generate and save post lists
-	err = createLists(posts)
-	checkError(err)
+	err = createLists(posts, input_template_directory, output_directory, blog_subdirectory, 5)
+	fail_on_error(err)
 }
